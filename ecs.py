@@ -18,14 +18,6 @@ class SeqMeta(mdb.DeclMeta):
         new_cls._seq = meta.alloc_sequence()
         return new_cls
 
-class Entity:
-    def __init__(self, world_ref, id):
-        self.world_ref = world_ref
-        self.id = id
-
-    def get_world(self):
-        return self.world_ref()
-
 class Component(metaclass=SeqMeta):
     @classmethod
     def get_sequence(cls):
@@ -43,83 +35,104 @@ class Component(metaclass=SeqMeta):
         info = ' '.join(f"{key}={value}" for key, value in self.gen_field_pairs(limit=self.__repr_limit))
         return f"<{name} {info}>"
 
-class Storage:
-    def __init__(self):
-        self.entities = OrderedDict()
-        self.comp_table = defaultdict(dict)
+class Entity:
+    def __init__(self, id, comps):
+        self.id = id
+        self.comps = dict((comp.get_sequence(), comp) for comp in comps)
 
-    def add_entity(self, entity):
-        self.entities[entity.id] = entity
-        return entity
+    def get_component_sequences(self):
+        return self.comps.keys()
 
-    def get_entity(self, entity_id):
-        return self.entities[entity_id]
-
-    def get_entities(self):
-        return self.entities.values()
-
-    def add_component(self, entity_id, comp_seq, comp):
-        self.comp_table[comp_seq][entity_id] = comp
-        return comp
-
-    def get_component(self, entity_id, comp_seq):
-        return self.comp_table[comp_seq][entity_id]
-
-    def get_components(self, comp_seq):
-        return self.comp_table[comp_seq].values()
-
-    def get_component_pairs(self, comp_seq):
-        return self.comp_table[comp_seq].items()
+    def get_id(self):
+        return self.id
 
 class System:
-    def pump(self, storage):
+    def __init__(self):
+        self.world = None
+
+    def bind(self, world):
+        self.world = world
+
+    def start(self):
         return True
 
-    def update(self, storage):
+    def stop(self):
+        return
+
+    def update(self):
         pass
 
 class World:
     def __init__(self):
-        self.state = 1
-        self.entity_id = 0
-        self.storage = Storage()
+        self.is_alive = True
+        self.next_entity_id = 0
+        self.entities = OrderedDict()
+        self.components = defaultdict(dict)
         self.systems = []
 
-    def create_entity(self):
-        self.entity_id += 1
-        return self.storage.add_entity(Entity(ref(self), self.entity_id))
+    def create_entity(self, *comps):
+        self.next_entity_id += 1
 
-    def add_system(self, system):
-        self.systems.append(system)
-        return system
+        new_entity_id = self.next_entity_id
+        new_entity = Entity(new_entity_id, comps)
+        self.entities[new_entity_id] = new_entity
 
-    def add_component(self, entity_id, comp):
-        comp_seq = comp.get_sequence()
-        return self.storage.add_component(entity_id, comp_seq, comp)
+        for comp in comps:
+            comp_seq = comp.get_sequence()
+            self.components[comp.get_sequence()][new_entity_id] = comp
 
-    def get_component(self, entity_id, comp_cls):
+        return new_entity
+
+    def destroy_entity(self, del_entity_id):
+        del_entity =  self.entities.get(del_entity_id)
+        if del_entity:
+            for comp_seq in del_entity.get_component_sequences():
+                del self.components[comp_seq][del_entity_id] 
+                
+            del self.entities[del_entity_id]
+        
+    def get_entity_pairs(self):
+        return self.entities.items()
+
+    def get_entity_component(self, entity_id, comp_cls):
         comp_seq = comp_cls.get_sequence()
-        return self.storage.get_component(entity_id, comp_seq)
-
-    def get_components(self, comp_cls):
-        comp_seq = comp_cls.get_sequence()
-        return self.storage.get_components(comp_seq)
+        return self.components[comp_seq][entity_id]
 
     def get_component_pairs(self, comp_cls):
         comp_seq = comp_cls.get_sequence()
-        return self.storage.get_component_pairs(comp_seq)
+        return self.components[comp_seq].items()
 
-    def get_entities(self):
-        return self.entities
+    def get_components(self, comp_cls):
+        comp_seq = comp_cls.get_sequence()
+        return self.components[comp_seq].values()
 
-    def pump(self):
+    def add_system(self, system):
+        system.bind(self)
+        self.systems.append(system)
+        return system
+
+    def start(self):
         for system in self.systems:
-            if not system.pump(self):
+            if not system.start():
                 return False
 
         return True
 
-    def update(self):
+    def stop(self):
         for system in self.systems:
-            system.update(self)
+            system.stop()
+
+    def update(self):
+        if not self.is_alive:
+            return False
+
+        for system in self.systems:
+            system.update()
+
+        return True
+
+    def kill(self):
+        self.is_alive = False
+
+        
 
