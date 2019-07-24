@@ -16,25 +16,22 @@ class CharacterComponent(ecs.Component):
 
 import tcod
 
-class RenderingSystem(ecs.System):
-    def __init__(self, entity_id, *args, **kwargs):
-        ecs.System.__init__(self, *args, **kwargs)
+class ControlSystem(ecs.System):
+    def __init__(self, entity_id):
+        ecs.System.__init__(self)
+        self.player_eid = entity_id
 
-        tcod.console_set_custom_font('fonts/font.png', flags=tcod.FONT_TYPE_GREYSCALE|tcod.FONT_LAYOUT_TCOD)
-        tcod.console_init_root(w=80, h=60, title='example', fullscreen=False)
-        tcod.sys_set_fps(30)
-
-        self.entity_id = entity_id
-
-    def pump(self, world):
+    def update(self):
         if tcod.console_is_window_closed():
-            return False
+            self.world.kill()
+            return
 
         key = tcod.console_check_for_keypress()
         if key.vk == tcod.KEY_ESCAPE:
-            return False
+            self.world.kill()
+            return
 
-        comp = world.get_component(self.entity_id, CharacterComponent)
+        comp = world.get_entity_component(self.player_eid, CharacterComponent)
         if key.vk == tcod.KEY_UP:
             comp.y -= 1
         elif key.vk == tcod.KEY_DOWN:
@@ -44,16 +41,23 @@ class RenderingSystem(ecs.System):
         elif key.vk == tcod.KEY_RIGHT:
             comp.x += 1
 
-        return True
 
-    def update(self, world):
-        for comp in world.get_components(CharacterComponent):
+class RenderSystem(ecs.System):
+    def __init__(self, *args, **kwargs):
+        ecs.System.__init__(self, *args, **kwargs)
+
+        tcod.console_set_custom_font('fonts/font.png', flags=tcod.FONT_TYPE_GREYSCALE|tcod.FONT_LAYOUT_TCOD)
+        tcod.console_init_root(w=80, h=60, title='example', fullscreen=False)
+        tcod.sys_set_fps(30)
+
+    def update(self):
+        for comp in self.world.get_components(CharacterComponent):
             tcod.console_set_default_foreground(0, tcod.white)
             tcod.console_put_char(0, comp.x, comp.y, comp.char_proto.shape, tcod.BKGND_NONE)
 
         tcod.console_flush()
 
-        for comp in world.get_components(CharacterComponent):
+        for comp in self.world.get_components(CharacterComponent):
             tcod.console_set_default_foreground(0, tcod.white)
             tcod.console_put_char(0, comp.x, comp.y, ' ', tcod.BKGND_NONE)
 
@@ -65,11 +69,14 @@ if __name__ == '__main__':
     ])
 
     world = ecs.World()
-    new_entity = world.create_entity()
-    world.add_component(new_entity.id, CharacterComponent(1, 40, 30))
-    world.add_system(RenderingSystem(new_entity.id))
+    entity = world.create_entity(CharacterComponent(1, 40, 30))
+    world.add_system(ControlSystem(entity.get_id()))
+    world.add_system(RenderSystem())
+    world.start()
 
-    while world.pump():
-        world.update()
+    while world.update():
+        pass
 
+    world.destroy_entity(entity.get_id())
+    world.stop()
 
