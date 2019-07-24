@@ -47,6 +47,14 @@ class Entity:
         return self.id
 
 class System:
+    _inst = None
+
+    @classmethod
+    def get(cls):
+        if not cls._inst:
+            cls._inst = cls()
+        return cls._inst
+
     def __init__(self):
         self.world = None
 
